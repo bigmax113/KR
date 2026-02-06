@@ -147,7 +147,7 @@ async def generate_continue(req: ContinueRequest) -> GenerateResponse:
         raise HTTPException(status_code=404, detail="robot_profile_not_found")
 
     # Merge answers (accumulate)
-    merged_answers: dict[str, Any]] = dict(state.get("answers", {}))
+    merged_answers: dict[str, Any] = dict(state.get("answers", {}))
     merged_answers.update(req.answers or {})
     state["answers"] = merged_answers
 
