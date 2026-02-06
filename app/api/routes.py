@@ -19,6 +19,9 @@ from app.storage.robot_profiles import RobotProfileRepo
 from app.storage.cache import Cache
 from app.xai.client import XAIClient
 
+# Hardcoded tooling model (do not override via env)
+MODEL_TOOLING_HARDCODED = "grok-4-1-fast-non-reasoning"
+
 
 router = APIRouter(prefix="/v1", tags=["v1"])
 
@@ -37,7 +40,7 @@ translator = TranslationService(xai=xai, model=settings.XAI_MODEL_GENERAL, store
 
 generator = RecipeGenerator(
     xai=xai,
-    model_tooling=settings.XAI_MODEL_TOOLING,
+    model_tooling=MODEL_TOOLING_HARDCODED,
     model_general=settings.XAI_MODEL_GENERAL,
     translator=translator,
     store=settings.XAI_STORE_MESSAGES,
@@ -144,7 +147,7 @@ async def generate_continue(req: ContinueRequest) -> GenerateResponse:
         raise HTTPException(status_code=404, detail="robot_profile_not_found")
 
     # Merge answers (accumulate)
-    merged_answers: dict[str, Any] = dict(state.get("answers", {}))
+    merged_answers: dict[str, Any]] = dict(state.get("answers", {}))
     merged_answers.update(req.answers or {})
     state["answers"] = merged_answers
 
