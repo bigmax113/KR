@@ -1,0 +1,27 @@
+{
+  "robot_model": "THERMOMIX_TM6",
+  "bowl_capacity_ml": 2200,
+  "bowl_max_fill_ml": 2200,
+  "bowl_max_mass_g": 3000,
+  "attachments": [
+    "blade",
+    "butterfly_whisk",
+    "varoma",
+    "simmering_basket",
+    "measuring_cup",
+    "spatula"
+  ],
+  "modes": [
+    { "mode": "CHOP", "speed_range": [1, 10], "max_duration_sec": 600, "supports_pulse": true },
+    { "mode": "MIX", "speed_range": [1, 10], "max_duration_sec": 7200 },
+    { "mode": "WHISK", "speed_range": [1, 6], "max_duration_sec": 3600, "stir_speeds": [1, 2, 3] },
+    { "mode": "KNEAD", "speed_range": [1, 3], "max_duration_sec": 1200, "supports_pulse": false },
+    { "mode": "HEAT", "speed_range": [0, 3], "temp_c_range": [37, 120], "max_duration_sec": 7200 },
+    { "mode": "STEAM", "speed_range": [0, 3], "temp_c_range": [90, 120], "max_duration_sec": 7200 },
+    { "mode": "REST", "max_duration_sec": 14400 }
+  ],
+  "idioms": {
+    "device_name": "Thermomix TM6",
+    "notes": "Профиль составлен по публичным спецификациям TM6. Скорость нормализована в шкалу 1–10 для целей планирования/валидации."
+  }
+}
