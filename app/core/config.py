@@ -19,7 +19,8 @@ class Settings(BaseSettings):
     # xAI / Grok
     XAI_BASE_URL: str = "https://api.x.ai"
     XAI_API_KEY: str = Field(default="", repr=False)
-    # Tooling model is hardcoded in app/api/routes.py (Render env cannot override it).
+    # Recommended: use Grok 4 family when combining tools + structured outputs.
+    XAI_MODEL_TOOLING: str = "grok-4-1-fast-non-reasoning"
     # You can use a different model for translation/adaptation if you want.
     XAI_MODEL_GENERAL: str = "grok-4-1-fast-reasoning"
     XAI_TIMEOUT_S: float = 60.0
