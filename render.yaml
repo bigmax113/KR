@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: ai-recipes-backend
+    runtime: python
+    region: frankfurt
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: "/v1/health"
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.10"
+      - key: ENV
+        value: "prod"
+      - key: XAI_API_KEY
+        sync: false
+      - key: XAI_BASE_URL
+        value: "https://api.x.ai"
+      - key: XAI_MODEL_TOOLING
+        value: "grok-4-1-fast-non-reasoning"
+      - key: XAI_MODEL_GENERAL
+        value: "grok-4-1-fast-reasoning"
+      - key: XAI_TIMEOUT_S
+        value: "60"
+      - key: XAI_STORE_MESSAGES
+        value: "false"
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: WEB_ALLOWED_DOMAINS
+        value: ""
+      - key: WEB_EXCLUDED_DOMAINS
+        value: "pinterest.com,facebook.com,instagram.com,tiktok.com"
