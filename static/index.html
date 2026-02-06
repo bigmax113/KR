@@ -1,1 +1,263 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Grok test — ai-recipes-backend</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    .muted { color: #666; font-size: 13px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 14px; }
+    .row { display: grid; grid-template-columns: 220px 1fr; gap: 10px; align-items: center; margin: 10px 0; }
+    label { font-size: 13px; color: #333; }
+    input, textarea { width: 100%; padding: 8px 10px; border: 1px solid #bbb; border-radius: 8px; font-size: 14px; }
+    textarea { height: 96px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    button { padding: 8px 12px; border: 1px solid #999; border-radius: 8px; background: #f6f6f6; cursor: pointer; }
+    button.primary { border-color: #444; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .outwrap { margin-top: 16px; }
+    pre { background: #0b1220; color: #e6eefc; padding: 14px; border-radius: 10px; overflow: auto; }
+    .ok { color: #0a7a2f; font-weight: 600; }
+    .bad { color: #b00020; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>Проверка Grok: поиск рецепта по названию → extract → (адаптация под робота)</h1>
+  <p class="muted">
+    UI можно открыть напрямую на этом backend (без CORS): <code>/</code>.
+    Также можно скачать как файл и открыть локально — но тогда возможны CORS/HTTPS нюансы.
+  </p>
 
+  <div class="grid">
+    <div class="card">
+      <h3 style="margin:0 0 10px">1) Generate (поиск по названию)</h3>
+
+      <div class="row">
+        <label for="baseUrl">Base URL (backend)</label>
+        <input id="baseUrl" />
+      </div>
+
+      <div class="row">
+        <label for="lang">lang</label>
+        <input id="lang" value="ru" />
+      </div>
+
+      <div class="row">
+        <label for="robotModel">robot_model</label>
+        <input id="robotModel" value="THERMOMIX_TM6" />
+      </div>
+
+      <div class="row">
+        <label for="query">query (название блюда)</label>
+        <input id="query" value="том-ям" />
+      </div>
+
+      <div class="row" style="align-items:start">
+        <label for="constraints">constraints (JSON, опционально)</label>
+        <textarea id="constraints">{ "servings": 2 }</textarea>
+      </div>
+
+      <div class="buttons">
+        <button class="primary" id="btnGenerate">Generate</button>
+        <button id="btnHealth">Health</button>
+        <button id="btnClear">Clear output</button>
+      </div>
+
+      <p class="muted" style="margin-top:10px">
+        Если <code>robot_model</code> не найден — добавьте профиль в <code>data/robot_profiles/&lt;robot_model&gt;.json</code>.
+      </p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 10px">2) Continue (resume)</h3>
+
+      <div class="row">
+        <label for="sessionId">session_id</label>
+        <input id="sessionId" placeholder="появится после Generate" />
+      </div>
+
+      <div class="row" style="align-items:start">
+        <label for="answers">answers (JSON)</label>
+        <textarea id="answers">{}</textarea>
+      </div>
+
+      <div class="buttons">
+        <button class="primary" id="btnContinue">Continue</button>
+        <button id="btnFill">Fill template</button>
+      </div>
+
+      <p class="muted" style="margin-top:10px">
+        Для быстрого теста: нажмите Generate, если backend вернёт <code>questions[]</code> — заполните ответы и нажмите Continue.
+      </p>
+    </div>
+  </div>
+
+  <div class="outwrap">
+    <div id="statusLine" class="muted">Готово.</div>
+    <pre id="output">{}</pre>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  function defaultBaseUrl() {
+    // If served from backend: http(s) origin is correct.
+    if (location.protocol === "http:" || location.protocol === "https:") {
+      return location.origin;
+    }
+    // If opened as file:// — fall back to your Render URL.
+    return "https://kr-df8r.onrender.com";
+  }
+
+  function normalizeBaseUrl(raw) {
+    return (raw || "").trim().replace(/\/+$/, "");
+  }
+
+  function setStatus(text, ok=null) {
+    const el = $("statusLine");
+    el.textContent = text;
+    el.className = ok === null ? "muted" : (ok ? "ok" : "bad");
+  }
+
+  function pretty(obj) {
+    try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
+  }
+
+  async function fetchJson(path, { method="GET", body=null, timeoutMs=180000 } = {}) {
+    const base = normalizeBaseUrl($("baseUrl").value);
+    const url = base + path;
+
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+
+    try {
+      const init = {
+        method,
+        headers: {},
+        signal: ctrl.signal,
+      };
+
+      if (body !== null) {
+        init.headers["Content-Type"] = "application/json";
+        init.body = JSON.stringify(body);
+      }
+
+      const resp = await fetch(url, init);
+      const text = await resp.text();
+      let data;
+      try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+
+      if (!resp.ok) {
+        const err = new Error(`HTTP ${resp.status}`);
+        err.status = resp.status;
+        err.data = data;
+        throw err;
+      }
+
+      return data;
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  function safeJsonParse(str, fallback) {
+    try { return JSON.parse(str); } catch { return fallback; }
+  }
+
+  async function onHealth() {
+    setStatus("Health…");
+    $("btnHealth").disabled = true;
+    try {
+      const data = await fetchJson("/v1/health");
+      $("output").textContent = pretty(data);
+      setStatus("Health OK", true);
+    } catch (e) {
+      $("output").textContent = pretty({ error: String(e), details: e.data ?? null });
+      setStatus("Health failed", false);
+    } finally {
+      $("btnHealth").disabled = false;
+    }
+  }
+
+  async function onGenerate() {
+    setStatus("Generate…");
+    $("btnGenerate").disabled = true;
+    try {
+      const constraints = safeJsonParse($("constraints").value || "{}", {});
+      const body = {
+        lang: $("lang").value.trim() || "ru",
+        robot_model: $("robotModel").value.trim() || "THERMOMIX_TM6",
+        query: $("query").value.trim(),
+        constraints,
+      };
+
+      const data = await fetchJson("/v1/recipes/generate", { method: "POST", body });
+      $("output").textContent = pretty(data);
+
+      if (data && data.session_id) {
+        $("sessionId").value = data.session_id;
+      }
+
+      // If backend returns questions[] - show a template for answers.
+      if (data && Array.isArray(data.questions) && data.questions.length) {
+        const template = {};
+        for (const q of data.questions) {
+          if (q && q.key) template[q.key] = "";
+        }
+        $("answers").value = JSON.stringify(template, null, 2);
+      }
+
+      setStatus("Generate OK", true);
+    } catch (e) {
+      $("output").textContent = pretty({ error: String(e), details: e.data ?? null });
+      setStatus("Generate failed", false);
+    } finally {
+      $("btnGenerate").disabled = false;
+    }
+  }
+
+  async function onContinue() {
+    setStatus("Continue…");
+    $("btnContinue").disabled = true;
+    try {
+      const session_id = $("sessionId").value.trim();
+      const answers = safeJsonParse($("answers").value || "{}", {});
+      const body = { session_id, answers };
+
+      const data = await fetchJson("/v1/recipes/generate/continue", { method: "POST", body });
+      $("output").textContent = pretty(data);
+      setStatus("Continue OK", true);
+    } catch (e) {
+      $("output").textContent = pretty({ error: String(e), details: e.data ?? null });
+      setStatus("Continue failed", false);
+    } finally {
+      $("btnContinue").disabled = false;
+    }
+  }
+
+  function onFillTemplate() {
+    const raw = $("output").textContent;
+    const data = safeJsonParse(raw, null);
+    if (!data || !Array.isArray(data.questions)) return;
+    const template = {};
+    for (const q of data.questions) {
+      if (q && q.key) template[q.key] = "";
+    }
+    $("answers").value = JSON.stringify(template, null, 2);
+    setStatus("Template filled", true);
+  }
+
+  $("btnHealth").addEventListener("click", onHealth);
+  $("btnGenerate").addEventListener("click", onGenerate);
+  $("btnContinue").addEventListener("click", onContinue);
+  $("btnFill").addEventListener("click", onFillTemplate);
+  $("btnClear").addEventListener("click", () => { $("output").textContent = "{}"; setStatus("Очищено."); });
+
+  // Init
+  $("baseUrl").value = defaultBaseUrl();
+</script>
+</body>
+</html>
