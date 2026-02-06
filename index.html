@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>KR Backend — Grok recipe search test</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 16px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .col { flex: 1; min-width: 280px; }
+    label { display: block; font-size: 12px; color: #444; margin: 10px 0 4px; }
+    input, textarea, select, button { width: 100%; box-sizing: border-box; padding: 10px; font-size: 14px; }
+    textarea { min-height: 110px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    button { cursor: pointer; }
+    .btnrow { display: flex; gap: 10px; }
+    .btnrow button { width: auto; padding: 10px 14px; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; }
+    .muted { color: #666; font-size: 12px; }
+    pre { background: #0b1020; color: #e7e7e7; padding: 12px; border-radius: 10px; overflow: auto; }
+    .ok { color: #0a7; font-weight: 600; }
+    .bad { color: #c22; font-weight: 600; }
+    .qitem { border: 1px dashed #bbb; border-radius: 10px; padding: 10px; margin: 8px 0; }
+    .qtitle { font-weight: 600; margin-bottom: 6px; }
+    .small { font-size: 12px; }
+    .inline { display:flex; gap:10px; align-items:center; }
+    .inline input[type="checkbox"] { width: auto; transform: scale(1.2); }
+  </style>
+</head>
+<body>
+  <h2>Проверка Grok: поиск рецепта по названию → extract → (адаптация под робота)</h2>
+  <p class="muted">
+    Этот файл можно просто открыть в браузере. Он делает запросы к вашему backend (Render/локально).
+    Для теста используйте <code>/v1/recipes/generate</code> и при необходимости <code>/v1/recipes/generate/continue</code>.
+  </p>
+
+  <div class="row">
+    <div class="col card">
+      <h3>1) Generate (поиск по названию)</h3>
+
+      <label>Base URL (backend)</label>
+      <input id="baseUrl" value="http://localhost:8000" />
+
+      <div class="row">
+        <div class="col">
+          <label>lang</label>
+          <input id="lang" value="ru" />
+        </div>
+        <div class="col">
+          <label>robot_model</label>
+          <input id="robotModel" value="THERMOMIX_TM6" />
+        </div>
+      </div>
+
+      <label>query (название блюда)</label>
+      <input id="query" value="том-ям" />
+
+      <label>constraints (JSON, опционально)</label>
+      <textarea id="constraints">{ "servings": 2 }</textarea>
+
+      <div class="btnrow" style="margin-top:10px;">
+        <button id="btnGenerate">Generate</button>
+        <button id="btnHealth">Health</button>
+        <button id="btnClear">Clear output</button>
+      </div>
+
+      <p class="muted small" style="margin-top:10px;">
+        Если <code>robot_model</code> не найден — добавьте профиль в <code>data/robot_profiles/&lt;robot_model&gt;.json</code>.
+      </p>
+    </div>
+
+    <div class="col card">
+      <h3>2) Continue (resume)</h3>
+
+      <label>session_id</label>
+      <input id="sessionId" placeholder="появится после Generate" />
+
+      <div id="questionsWrap">
+        <p class="muted">Если backend вернул <code>questions[]</code>, они появятся здесь.</p>
+      </div>
+
+      <div class="btnrow" style="margin-top:10px;">
+        <button id="btnContinue">Continue</button>
+        <button id="btnFillTemplate">Fill template</button>
+      </div>
+
+      <label style="margin-top:12px;">answers (JSON, можно вручную)</label>
+      <textarea id="answers">{}</textarea>
+
+      <p class="muted small" style="margin-top:10px;">
+        Можно отвечать через форму вопросов выше или вручную через JSON.
+      </p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px;">
+    <div class="inline">
+      <div id="status" class="muted">Ready.</div>
+      <div id="statusTag"></div>
+    </div>
+    <h3 style="margin-top:10px;">Output</h3>
+    <pre id="out">{}</pre>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  function setStatus(text, ok=null) {
+    $("status").textContent = text;
+    $("statusTag").textContent = ok === null ? "" : (ok ? "OK" : "ERROR");
+    $("statusTag").className = ok === null ? "" : (ok ? "ok" : "bad");
+  }
+
+  function pretty(obj) {
+    try { return JSON.stringify(obj, null, 2); }
+    catch { return String(obj); }
+  }
+
+  function baseUrl() {
+    return $("baseUrl").value.trim().replace(/\/+$/, "");
+  }
+
+  function parseJson(text, fallback) {
+    const t = (text || "").trim();
+    if (!t) return fallback;
+    return JSON.parse(t);
+  }
+
+  async function api(path, method="GET", body=null) {
+    const url = baseUrl() + path;
+    const opts = { method, headers: { "Content-Type": "application/json" } };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(url, opts);
+    const txt = await res.text();
+    let data = null;
+    try { data = JSON.parse(txt); } catch { data = { raw: txt }; }
+    if (!res.ok) {
+      const err = new Error("HTTP " + res.status);
+      err.data = data;
+      throw err;
+    }
+    return data;
+  }
+
+  function renderQuestions(questions) {
+    const wrap = $("questionsWrap");
+    wrap.innerHTML = "";
+
+    if (!questions || questions.length === 0) {
+      wrap.innerHTML = `<p class="muted">Вопросов нет — можно не делать Continue.</p>`;
+      return;
+    }
+
+    const info = document.createElement("div");
+    info.innerHTML = `<p class="muted">Backend просит уточнения. Заполните и нажмите Continue.</p>`;
+    wrap.appendChild(info);
+
+    questions.forEach((q) => {
+      const box = document.createElement("div");
+      box.className = "qitem";
+
+      const title = document.createElement("div");
+      title.className = "qtitle";
+      title.textContent = `${q.id || "?"} — ${q.text || ""}`;
+      box.appendChild(title);
+
+      const hint = document.createElement("div");
+      hint.className = "muted small";
+      hint.textContent = `type: ${q.type || "text"}`;
+      box.appendChild(hint);
+
+      let inputEl;
+      const t = (q.type || "text").toLowerCase();
+
+      if (t === "boolean") {
+        const row = document.createElement("div");
+        row.className = "inline";
+        inputEl = document.createElement("input");
+        inputEl.type = "checkbox";
+        inputEl.dataset.qid = q.id;
+        row.appendChild(inputEl);
+        const lab = document.createElement("span");
+        lab.textContent = "true / false";
+        lab.className = "muted small";
+        row.appendChild(lab);
+        box.appendChild(row);
+      } else if (t === "number") {
+        inputEl = document.createElement("input");
+        inputEl.type = "number";
+        inputEl.step = "any";
+        inputEl.placeholder = "введите число";
+        inputEl.dataset.qid = q.id;
+        box.appendChild(inputEl);
+      } else if (t === "select" && Array.isArray(q.options)) {
+        inputEl = document.createElement("select");
+        inputEl.dataset.qid = q.id;
+        const opt0 = document.createElement("option");
+        opt0.value = "";
+        opt0.textContent = "— выбрать —";
+        inputEl.appendChild(opt0);
+        q.options.forEach((o) => {
+          const opt = document.createElement("option");
+          opt.value = o.value ?? o;
+          opt.textContent = o.label ?? String(o.value ?? o);
+          inputEl.appendChild(opt);
+        });
+        box.appendChild(inputEl);
+      } else {
+        inputEl = document.createElement("input");
+        inputEl.type = "text";
+        inputEl.placeholder = "введите ответ";
+        inputEl.dataset.qid = q.id;
+        box.appendChild(inputEl);
+      }
+
+      wrap.appendChild(box);
+    });
+  }
+
+  function collectAnswersFromForm() {
+    const answers = {};
+    const wrap = $("questionsWrap");
+    const inputs = wrap.querySelectorAll("[data-qid]");
+    inputs.forEach((el) => {
+      const id = el.dataset.qid;
+      if (!id) return;
+      if (el.type === "checkbox") {
+        answers[id] = el.checked;
+      } else if (el.type === "number") {
+        const v = el.value.trim();
+        if (v !== "") answers[id] = Number(v);
+      } else {
+        const v = el.value.trim();
+        if (v !== "") answers[id] = v;
+      }
+    });
+    return answers;
+  }
+
+  $("btnClear").onclick = () => { $("out").textContent = "{}"; setStatus("Ready."); };
+
+  $("btnHealth").onclick = async () => {
+    try {
+      setStatus("Calling /v1/health ...");
+      const data = await api("/v1/health");
+      $("out").textContent = pretty(data);
+      setStatus("Health OK", true);
+    } catch (e) {
+      $("out").textContent = pretty(e.data || { error: String(e) });
+      setStatus("Health failed", false);
+    }
+  };
+
+  $("btnGenerate").onclick = async () => {
+    try {
+      const payload = {
+        query: $("query").value.trim(),
+        lang: $("lang").value.trim() || "ru",
+        robot_model: $("robotModel").value.trim(),
+        constraints: parseJson($("constraints").value, {})
+      };
+
+      setStatus("Calling /v1/recipes/generate ...");
+      const data = await api("/v1/recipes/generate", "POST", payload);
+      $("out").textContent = pretty(data);
+
+      if (data.session_id) $("sessionId").value = data.session_id;
+
+      renderQuestions(data.questions || []);
+      const tmpl = {};
+      (data.questions || []).forEach((q) => { if (q.id) tmpl[q.id] = null; });
+      $("answers").value = pretty(tmpl);
+
+      setStatus("Generate OK", true);
+    } catch (e) {
+      $("out").textContent = pretty(e.data || { error: String(e) });
+      setStatus("Generate failed", false);
+    }
+  };
+
+  $("btnFillTemplate").onclick = () => {
+    const answers = collectAnswersFromForm();
+    $("answers").value = pretty(answers);
+    setStatus("Filled answers JSON from form.", true);
+  };
+
+  $("btnContinue").onclick = async () => {
+    try {
+      const session_id = $("sessionId").value.trim();
+      if (!session_id) { alert("Нет session_id. Сначала нажми Generate."); return; }
+
+      const manual = parseJson($("answers").value, {});
+      const fromForm = collectAnswersFromForm();
+      const answers = { ...manual, ...fromForm };
+
+      const payload = { session_id, answers };
+
+      setStatus("Calling /v1/recipes/generate/continue ...");
+      const data = await api("/v1/recipes/generate/continue", "POST", payload);
+      $("out").textContent = pretty(data);
+
+      renderQuestions(data.questions || []);
+      setStatus("Continue OK", true);
+    } catch (e) {
+      $("out").textContent = pretty(e.data || { error: String(e) });
+      setStatus("Continue failed", false);
+    }
+  };
+</script>
+</body>
+</html>
