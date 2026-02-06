@@ -1,1 +1,71 @@
-
+{
+  "robot_model": "AENO_XYZ",
+  "bowl_capacity_ml": 2500,
+  "bowl_max_fill_ml": 2000,
+  "bowl_max_mass_g": 1200,
+  "attachments": [
+    "knife",
+    "whisk",
+    "knead_hook",
+    "steam_basket"
+  ],
+  "modes": [
+    {
+      "mode": "CHOP",
+      "speed_range": [
+        1,
+        10
+      ],
+      "max_duration_sec": 300,
+      "supports_pulse": true
+    },
+    {
+      "mode": "MIX",
+      "speed_range": [
+        1,
+        10
+      ],
+      "max_duration_sec": 900
+    },
+    {
+      "mode": "WHISK",
+      "speed_range": [
+        1,
+        10
+      ],
+      "max_duration_sec": 900
+    },
+    {
+      "mode": "KNEAD",
+      "speed_range": [
+        1,
+        8
+      ],
+      "max_duration_sec": 1200
+    },
+    {
+      "mode": "HEAT",
+      "temp_c_range": [
+        37,
+        120
+      ],
+      "stir_speeds": [
+        1,
+        2,
+        3
+      ],
+      "max_duration_sec": 7200
+    },
+    {
+      "mode": "STEAM",
+      "max_duration_sec": 7200
+    }
+  ],
+  "idioms": {
+    "SAUTE": {
+      "mode": "HEAT",
+      "temperature_c": 120,
+      "stir_speed": 2
+    }
+  }
+}
