@@ -5,6 +5,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from app.core.config import settings
+
+# IMPORTANT: tooling model must be hardcoded (no env override).
+XAI_MODEL_TOOLING = "grok-4-1-fast-non-reasoning"
 from app.models.schemas import (
     CanonicalRecipe,
     ContinueRequest,
@@ -18,9 +21,6 @@ from app.storage.recipes import RecipeRepo
 from app.storage.robot_profiles import RobotProfileRepo
 from app.storage.cache import Cache
 from app.xai.client import XAIClient
-
-# Hardcoded tooling model (do not override via env)
-MODEL_TOOLING_HARDCODED = "grok-4-1-fast-non-reasoning"
 
 
 router = APIRouter(prefix="/v1", tags=["v1"])
@@ -40,7 +40,7 @@ translator = TranslationService(xai=xai, model=settings.XAI_MODEL_GENERAL, store
 
 generator = RecipeGenerator(
     xai=xai,
-    model_tooling=MODEL_TOOLING_HARDCODED,
+    model_tooling=XAI_MODEL_TOOLING,
     model_general=settings.XAI_MODEL_GENERAL,
     translator=translator,
     store=settings.XAI_STORE_MESSAGES,
